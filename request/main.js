@@ -60,6 +60,15 @@ function request (options, callback) {
   }
   options.client.addListener('error', clientErrorHandler);
   
+  // Workaround for the case when http server just closes connection
+  // without sending any response back to the client.
+  // See http://github.com/ry/node/issues/issue/359
+  var responseReceived = false;
+  options.client.addListener('close', function (e) {
+    if (responseReceived) return;
+    clientErrorHandler(new Error('http server closed connection'));
+  });
+  
   if (options.uri.auth && !options.headers.authorization) {
     options.headers.authorization = "Basic " + toBase64(options.uri.auth);
   }
@@ -69,7 +78,9 @@ function request (options, callback) {
   options.request = options.client.request(options.method, options.fullpath, options.headers);
   
   options.request.addListener("response", function (response) {
+    responseReceived = true;
     var buffer;
+    response.setEncoding(options.responseBodyEncoding || null);
     if (options.responseBodyStream) {
       buffer = options.responseBodyStream;
       sys.pump(response, options.responseBodyStream);
